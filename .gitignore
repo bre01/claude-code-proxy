@@ -1,2 +1,12 @@
 node_modules/
 dist/
+
+# gateway-py (Python implementation)
+gateway-py/.env
+gateway-py/.venv/
+gateway-py/__pycache__/
+gateway-py/**/*.pyc
+gateway-py/certs/
+gateway-py/*.log
+gateway-py/*.pid
+gateway-py/uv.lock

@@ -1,5 +1,17 @@
 # claude-code-proxy
 
+> **Fork note (bre01).** This fork adds a separate Python implementation under
+> [`gateway-py/`](gateway-py/) that targets a narrower use case the upstream
+> proxy doesn't address: serving an **HTTPS, CORS- and Private-Network-Access-
+> aware** Anthropic gateway so the **Claude for Word (Office for Mac)** add-on
+> can talk to a local Kimi pass-through.
+>
+> The upstream TypeScript proxy in `src/` is untouched and remains the
+> canonical implementation for Claude Code CLI with ChatGPT Plus / Kimi Code.
+> See [`gateway-py/README.md`](gateway-py/README.md) for setup, the
+> [comparison table](gateway-py/README.md#whats-different-vs-src), and why
+> HTTPS+CORS+PNA were needed.
+
 `claude-code-proxy` lets you use
 [Claude Code](https://www.anthropic.com/claude-code) with your **ChatGPT
 Plus/Pro** subscription or your **Kimi Code** (kimi.com) account.
