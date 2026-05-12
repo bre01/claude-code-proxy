@@ -8,9 +8,9 @@
 >
 > The upstream TypeScript proxy in `src/` is untouched and remains the
 > canonical implementation for Claude Code CLI with ChatGPT Plus / Kimi Code.
-> See [`gateway-py/README.md`](gateway-py/README.md) for setup, the
-> [comparison table](gateway-py/README.md#whats-different-vs-src), and why
-> HTTPS+CORS+PNA were needed.
+> See [`FORK-CHANGES.md`](FORK-CHANGES.md) for the full list of improvements
+> this fork brings, or jump straight to [`gateway-py/README.md`](gateway-py/README.md)
+> for Python-proxy setup.
 
 `claude-code-proxy` lets you use
 [Claude Code](https://www.anthropic.com/claude-code) with your **ChatGPT
