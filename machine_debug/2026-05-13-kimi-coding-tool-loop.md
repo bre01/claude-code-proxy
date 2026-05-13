@@ -6,6 +6,18 @@
 > Word Office add-in. The add-in only defines Word editing tools — no
 > `web_search`, no `SearchWeb`, no `FetchURL`.
 
+## TL;DR
+
+`kimi-for-coding` is **explicitly designed for, and benchmarked under,
+a small set of Moonshot-blessed coding harnesses** (Kimi Code CLI,
+Claude Code, Roo Code, Kilo Code, OpenCode). Dropping it into any other
+harness — Word add-in, Claude Desktop with a custom system prompt,
+arbitrary chat UIs — produces measurable degradation that Moonshot
+itself has publicly documented. The most visible symptom is unstoppable
+hallucinated tool calls (mostly to `web_search` / `SearchWeb`) that no
+amount of system-prompt instructions will silence, because the relevant
+prior is in the RL-tuned weights, not in any prompt.
+
 ## Symptom
 
 In Word, every user turn ends with `kimi-for-coding` attempting to call
@@ -35,32 +47,80 @@ the loop. Even prompts written by an Anthropic model (giving precise
 rules like "web_search returns empty = permanently stop calling
 web_search") were ignored.
 
-## Root cause
+## Root cause — Moonshot themselves filed the bug
 
 The behavior is **baked into the model weights via RL**, not into a
-prompt that can be overridden.
+prompt that can be overridden. The cleanest evidence comes from
+Moonshot AI's own bug report against the OpenCode harness:
 
-- `kimi-for-coding` is the Kimi K2.5 / K2.6 line, RL-trained to chain
-  hundreds of tool calls in agent harnesses
-  (https://huggingface.co/moonshotai/Kimi-K2-Thinking — "200–300
-  sequential tool calls without human interference").
-- Moonshot themselves filed [opencode#20258](https://github.com/anomalyco/opencode/issues/20258)
-  acknowledging that K2.5's coding/reasoning benchmark performance
-  degrades and becomes less stable under non-Kimi-optimized system
-  prompts. So *any* harness whose prompt structure isn't what Moonshot
-  tuned for sees worse behavior — Word add-in is a textbook example.
-- Kimi's API doesn't support `tool_choice: "none"` (only `"auto"`,
-  `"none"` documented but disabled in practice, and `null`). So you
-  can't force-disable tool calling at the API level.
-- Independent analysis: ["On its own, adding instructions to the
-  system prompt doesn't reliably override Kimi K2.5's confused tool
-  selection."](https://trilogyai.substack.com/p/taming-tool-calling-with-kimi-k25)
+> **[OpenCode issue #20258](https://github.com/anomalyco/opencode/issues/20258)** — "Default system prompt degrades `kimi-k2.5` performance on coding benchmarks" — filed 2026-03-31 by `Yuxin-Dong`, who states they are *"reporting this on behalf of Moonshot AI"*.
 
-The model's prior, learned during agentic RL, is: *"I have a coding
-harness; I should try to acquire information by calling search tools."*
-That prior fires whenever Kimi looks at any conversation that smells
-like a task — Word document editing definitely qualifies — regardless
-of what the system prompt or `tools` array says.
+Direct quotes from the issue (Moonshot's own characterization of the
+problem):
+
+> *"the current default system prompt appears to degrade `kimi-k2.5` performance on coding- and reasoning-oriented benchmarks."*
+
+> *"the default prompt is not neutral for Kimi. It appears to reduce both average performance and result stability."*
+
+> *"These constraints bias the model toward underspecified or shallow responses and may suppress useful planning, explanation, and intermediate reasoning behavior."*
+
+> *"competing instructions likely create instability in response style and behavior."*
+
+Quantitative claim from the same issue (fine-tuned-for-Kimi prompt vs.
+generic default prompt, with reported standard deviations):
+
+| Benchmark   | Fine-tuned prompt | Default prompt | Δ      | σ change |
+|-------------|-------------------|----------------|--------|----------|
+| Benchmark A | 58.0 ± 2.4        | 54.1 ± 3.8     | −3.9   | +1.4     |
+| Benchmark B | 67.1 ± 1.0        | 60.0 ± 2.4     | −7.1   | +1.4     |
+
+So in Moonshot's own evaluation: under a generic prompt structure,
+average performance drops several points **and** result variance
+roughly doubles. The specific benchmarks aren't named publicly (the
+poster: *"the underlying evaluation datasets and benchmark setup are
+internal only"*), but the direction and magnitude are explicit.
+
+Implication for our Word use case: Word add-in's system prompt is
+**designed for Anthropic Claude**, not for Kimi. By Moonshot's own
+admission, the effect is reduced performance and increased instability
+— in our case that instability manifests as the hallucinated-tool-call
+loop. The model isn't malfunctioning; it's operating *outside* the
+prompt envelope it was tuned for.
+
+Supporting evidence:
+
+- [Kimi Code Docs](https://www.kimi.com/code/docs/en/) — Moonshot
+  explicitly lists the supported third-party harnesses (Claude Code,
+  Roo Code, Kilo Code, OpenCode, Hermes, OpenClaw). Word add-in is
+  not on this list. Kimi's own SWE-Bench evaluations use *"an
+  internally developed evaluation framework that includes a minimal
+  set of tools — bash, createfile, insert, view, strreplace, and
+  submit — along with tailored system prompts designed for the tasks."*
+- [Kimi K2 Thinking model card](https://huggingface.co/moonshotai/Kimi-K2-Thinking)
+  — the model is RL-trained to chain *"200–300 sequential tool calls
+  without human interference"*. That trained behavior is what we
+  observe persisting in non-agent contexts.
+- [HKUDS/nanobot#354](https://github.com/HKUDS/nanobot/issues/354) —
+  Moonshot's API server actively rejects non-whitelisted client
+  User-Agents (`access_terminated_error: "Kimi For Coding is currently
+  only available for Coding Agents such as Kimi CLI, Claude Code, Roo
+  Code, Kilo Code, etc."`). The whitelist is the production-side
+  manifestation of the same assumption — the model expects a known
+  harness.
+- [Trilogy AI — "Taming Tool Calling with Kimi K2.5"](https://trilogyai.substack.com/p/taming-tool-calling-with-kimi-k25)
+  — independent reproduction: *"On its own, adding instructions to
+  the system prompt doesn't reliably override Kimi K2.5's confused
+  tool selection."*
+- Tool-choice control: Kimi's OpenAI-compatible layer does not
+  support `tool_choice: "none"` or `"required"`. The
+  application can't force-disable hallucinated tool calls at the API
+  level — only declare what tools exist and hope.
+
+The combination — RL-trained agent prior + no `tool_choice` lever +
+Moonshot's own documented prompt-sensitivity — means there is no
+prompt-engineering or API-flag mitigation. The model *will* try to
+call agent tools whenever the conversation looks like a task, and
+Word document editing definitely qualifies.
 
 ## Deterministic fix (gateway-side)
 
@@ -99,13 +159,47 @@ one — the gateway must parse SSE event boundaries instead of
 
 The user switched the Word add-in upstream from Kimi to DeepSeek-V4-Pro
 mid-debugging. DeepSeek's RL was tuned with different priors and
-doesn't exhibit the same hallucinated-tool-loop behavior. The Word
-add-in now works without any tool filtering on the gateway. The
-filter remains valuable for anyone routing Kimi through a non-coding
-harness, but isn't on the current critical path.
+doesn't exhibit the same hallucinated-tool-loop behavior in our
+session — across ~15 multi-turn Word conversations all returned
+`status: 200` and produced sensible edits, with prompt cache hit rate
+approaching 100% after the first turn. The Word add-in now works
+without any tool filtering on the gateway.
 
-If/when needed, the filter implementation is the cleanest deterministic
-mitigation. Prompt-only approaches are not viable for `kimi-for-coding`.
+The filter implementation remains the deterministic mitigation for
+anyone routing `kimi-for-coding` through a non-coding harness, but
+isn't on the current critical path. If you hit the loop on a different
+provider's API key (Anthropic API → custom proxy → Kimi, for example),
+the filter is the answer.
+
+## K2.6 improvements (partial mitigation)
+
+The [Kimi K2.6 Tech Blog](https://www.kimi.com/blog/kimi-k2-6) and
+[Verdent's K2.6 review](https://www.verdent.ai/guides/what-is-kimi-k2-6)
+mention better stuck-detection and improved tool-call stability over
+K2.5 — "within OpenCode, Kimi K2.6 proves to be exceptionally reliable,
+with steady and consistent task decomposition and tool calling." This
+helps but doesn't eliminate the fundamental tension: the model is still
+RL-trained for agentic harnesses, and `kimi-for-coding` will
+automatically upgrade to K2.6 (and K2.7, etc.) without changing the
+prompt-envelope assumption. As long as the served model is descended
+from the agentic-RL line, dropping it into a non-coding harness will
+under-deliver.
+
+## Bottom line for anyone considering this integration
+
+- ✅ Kimi Code CLI + `kimi-for-coding` — designed for this, works well.
+- ✅ Claude Code CLI + `kimi-for-coding` via gateway — Moonshot's own
+  supported configuration; UA `claude-cli/*` is on the whitelist.
+- ✅ OpenCode / Roo Code / Kilo Code + `kimi-for-coding` — supported.
+- ⚠️ Generic chat UIs + `kimi-for-coding` — works but expect tool-call
+  hallucinations and prompt sensitivity. Mitigation is gateway-side
+  filtering, not prompts.
+- ❌ Word / Excel / PowerPoint Office add-ins + `kimi-for-coding` —
+  not recommended. The add-in's prompts are tuned for Claude, the
+  tools are Office editing tools (no web search), and Kimi's
+  hallucinated `web_search` calls will loop. Either switch to a
+  non-agentic upstream (DeepSeek V4, generic Moonshot API,
+  gpt-4o-mini) or invest in the gateway-side filter.
 
 ## Related notes
 
@@ -117,6 +211,10 @@ mitigation. Prompt-only approaches are not viable for `kimi-for-coding`.
   In practice impersonating `claude-cli` (which is itself a whitelisted
   coding agent) is the documented path the Kimi Code docs themselves
   describe. Different from impersonating a user-facing app.
-- K2.6 reportedly improves agentic-loop stuck-detection over K2.5 but
-  doesn't eliminate the hallucination prior — the fundamental tension
-  between an RL-tuned agent model and a non-agent harness remains.
+- A separate but related bug — [OpenCode #10996](https://github.com/anomalyco/opencode/issues/10996)
+  — documents `kimi-for-coding` with `thinking: enabled` failing every
+  tool call with `HTTP 400 "thinking is enabled but reasoning_content
+  is missing in assistant tool call message at index N"`. Workaround is
+  to disable thinking. This is a separate API-level bug from the
+  RL-prior issue described above, but worth knowing about when
+  integrating.

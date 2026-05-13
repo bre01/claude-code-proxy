@@ -15,8 +15,11 @@ hit a similar symptom.
   exactly what bytes the client sent and the upstream returned*. This is the
   minimal `print`-based capture mode we inserted into `gateway-py/server.py`
   and the kinds of upstream errors it surfaces.
-- [2026-05-13 — Kimi for-coding tool-call loop](./2026-05-13-kimi-coding-tool-loop.md)
+- [2026-05-13 — Kimi for-coding tool-call loop in non-coding harnesses](./2026-05-13-kimi-coding-tool-loop.md)
   Why `kimi-for-coding` keeps hallucinating `web_search` / `SearchWeb`
   calls inside Word add-in (a non-coding harness), why detailed
-  Anthropic-written guidance prompts don't fix it, and the gateway-side
-  deterministic mitigation.
+  Anthropic-written guidance prompts don't fix it, the gateway-side
+  deterministic mitigation, **and Moonshot AI's own admission (with
+  benchmark numbers) that the model degrades and becomes unstable
+  under prompt structures it wasn't tuned for** — filed by Moonshot
+  themselves against OpenCode as issue #20258.
